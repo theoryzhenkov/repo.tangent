@@ -31,3 +31,17 @@ export async function recordSyndication(
     .values({ id: ulid(), noteId, network, remoteUri, remoteCid })
     .onConflictDoNothing({ target: [syndication.noteId, syndication.network] });
 }
+
+/** Refresh the stored remote uri/cid after editing a syndicated copy in place. */
+export async function updateSyndication(
+  database: Database,
+  noteId: string,
+  network: string,
+  remoteUri: string,
+  remoteCid: string | null,
+): Promise<void> {
+  await database.db
+    .update(syndication)
+    .set({ remoteUri, remoteCid })
+    .where(and(eq(syndication.noteId, noteId), eq(syndication.network, network)));
+}

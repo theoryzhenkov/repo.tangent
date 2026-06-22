@@ -1,5 +1,7 @@
-import { AtpAgent, RichText } from "@atproto/api";
+import { AtpAgent, AtUri, RichText } from "@atproto/api";
 import type { BlueskyCredentials } from "../config.ts";
+
+type PostRecord = Parameters<AtpAgent["post"]>[0];
 
 export interface BlueskyPostResult {
   uri: string;
@@ -58,24 +60,21 @@ export class BlueskyClient {
     return this.#loginPromise;
   }
 
-  async post(input: {
-    text: string;
-    images?: BlueskyImage[];
-  }): Promise<BlueskyPostResult> {
-    await this.#ensureLogin();
-    const rich = new RichText({ text: input.text });
+  // Build the shared post body (text + detected facets + optional image
+  // embed) used by both create and edit. The caller supplies `createdAt`.
+  async #composeRecord(
+    text: string,
+    images: BlueskyImage[],
+  ): Promise<PostRecord> {
+    const rich = new RichText({ text });
     await rich.detectFacets(this.#agent);
 
-    const record: Parameters<AtpAgent["post"]>[0] = {
-      text: rich.text,
-      facets: rich.facets,
-      createdAt: new Date().toISOString(),
-    };
+    const record: PostRecord = { text: rich.text, facets: rich.facets };
 
-    const images = (input.images ?? []).slice(0, 4); // Bluesky allows up to 4
-    if (images.length > 0) {
+    const limited = images.slice(0, 4); // Bluesky allows up to 4
+    if (limited.length > 0) {
       const uploaded = await Promise.all(
-        images.map(async (image) => {
+        limited.map(async (image) => {
           const result = await this.#agent.uploadBlob(image.bytes, {
             encoding: image.contentType,
           });
@@ -88,8 +87,62 @@ export class BlueskyClient {
       } as typeof record.embed;
     }
 
-    const result = await this.#agent.post(record);
+    return record;
+  }
+
+  async post(input: {
+    text: string;
+    images?: BlueskyImage[];
+  }): Promise<BlueskyPostResult> {
+    await this.#ensureLogin();
+    const record = await this.#composeRecord(input.text, input.images ?? []);
+    const result = await this.#agent.post({
+      ...record,
+      createdAt: new Date().toISOString(),
+    });
     return { uri: result.uri, cid: result.cid };
+  }
+
+  /**
+   * Edit an existing post in place: overwrite the record at the same rkey so
+   * the post keeps its URI (likes/reposts/replies survive). The original
+   * `createdAt` is preserved so the edit doesn't re-sort the timeline.
+   */
+  async updatePost(
+    uri: string,
+    input: { text: string; images?: BlueskyImage[] },
+  ): Promise<BlueskyPostResult> {
+    await this.#ensureLogin();
+    const at = new AtUri(uri);
+    const record = await this.#composeRecord(input.text, input.images ?? []);
+    const result = await this.#agent.com.atproto.repo.putRecord({
+      repo: at.hostname,
+      collection: at.collection,
+      rkey: at.rkey,
+      record: {
+        $type: "app.bsky.feed.post",
+        ...record,
+        createdAt: await this.#originalCreatedAt(at),
+      },
+    });
+    return { uri: result.data.uri, cid: result.data.cid };
+  }
+
+  // Read an existing post's `createdAt`, falling back to now if it can't be
+  // fetched, so that an edit keeps the post's original timeline position.
+  async #originalCreatedAt(at: AtUri): Promise<string> {
+    try {
+      const existing = await this.#agent.com.atproto.repo.getRecord({
+        repo: at.hostname,
+        collection: at.collection,
+        rkey: at.rkey,
+      });
+      const value = existing.data.value as { createdAt?: unknown };
+      if (typeof value.createdAt === "string") return value.createdAt;
+    } catch {
+      // fall back to now
+    }
+    return new Date().toISOString();
   }
 
   async deletePost(uri: string): Promise<void> {

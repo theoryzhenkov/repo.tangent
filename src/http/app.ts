@@ -19,7 +19,11 @@ import {
 import { renderNote } from "../notes/render.ts";
 import type { MediaStore } from "../store/media.ts";
 import { createNote, deleteNote, getNote, updateNote } from "../store/notes.ts";
-import { getSyndication, recordSyndication } from "../store/syndication.ts";
+import {
+  getSyndication,
+  recordSyndication,
+  updateSyndication,
+} from "../store/syndication.ts";
 import { adminPage, loginPage } from "./admin.ts";
 import { createNotesApi, serializeNote } from "./api.ts";
 import { checkPassword, isAuthed, SESSION_COOKIE, sessionToken } from "./auth.ts";
@@ -84,6 +88,13 @@ export function createApp({
       });
     }
     return images;
+  }
+
+  // POSSE backlink for a note, or null when no permalink base is configured.
+  function notePermalink(noteId: string): string | null {
+    return config.notePermalinkBase != null
+      ? `${config.notePermalinkBase.replace(/\/$/, "")}/${noteId}`
+      : null;
   }
 
   async function pruneRemovedMedia(
@@ -191,12 +202,8 @@ export function createApp({
     let syndicated: { bluesky: string } | null = null;
     if (bluesky != null && note.inReplyTo == null) {
       try {
-        const permalink =
-          config.notePermalinkBase != null
-            ? `${config.notePermalinkBase.replace(/\/$/, "")}/${note.id}`
-            : null;
         const result = await bluesky.post({
-          text: buildBlueskyText(note.text, permalink),
+          text: buildBlueskyText(note.text, notePermalink(note.id)),
           images: await blueskyImages(attachments),
         });
         await recordSyndication(database, note.id, "bluesky", result.uri, result.cid);
@@ -209,7 +216,7 @@ export function createApp({
     return c.json({ note: serializeNote(note), syndicated });
   });
 
-  // Edit a note and deliver Update(Note). The Bluesky copy is left unchanged.
+  // Edit a note: deliver Update(Note) and edit the Bluesky copy in place.
   app.patch("/api/notes/:id", async (c) => {
     if (!auth(c)) return c.json({ error: "unauthorized" }, 401);
     const id = c.req.param("id");
@@ -237,9 +244,36 @@ export function createApp({
       "followers",
       toUpdateActivity(ctx, config.actorHandle, note),
     );
+
+    // Edit the syndicated Bluesky copy in place, if one exists. Only notes
+    // that were POSSE'd (top-level, posted while Bluesky was reachable) have a
+    // syndication row; replies and un-syndicated notes are left alone.
+    let syndicated: { bluesky: string } | null = null;
+    if (bluesky != null) {
+      const synd = await getSyndication(database, id, "bluesky");
+      if (synd != null) {
+        try {
+          const result = await bluesky.updatePost(synd.remoteUri, {
+            text: buildBlueskyText(note.text, notePermalink(note.id)),
+            images: await blueskyImages(attachments),
+          });
+          await updateSyndication(
+            database,
+            note.id,
+            "bluesky",
+            result.uri,
+            result.cid,
+          );
+          syndicated = { bluesky: result.uri };
+        } catch (error) {
+          console.error("tangent: bluesky update failed", error);
+        }
+      }
+    }
+
     await pruneRemovedMedia(existing.attachments, attachments);
 
-    return c.json({ note: serializeNote(note) });
+    return c.json({ note: serializeNote(note), syndicated });
   });
 
   // Delete a note: tombstone to followers, remove the Bluesky copy + blobs.
