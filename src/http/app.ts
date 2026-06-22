@@ -5,6 +5,7 @@ import { deleteCookie, setCookie } from "hono/cookie";
 import {
   type BlueskyClient,
   type BlueskyImage,
+  splitIntoThread,
 } from "../bluesky/client.ts";
 import type { Config } from "../config.ts";
 import type { Database } from "../db/client.ts";
@@ -160,6 +161,16 @@ export function createApp({
       contentType: row.contentType,
       alt: row.alt,
     });
+  });
+
+  // Preview how a note would be split into a Bluesky thread. Powers the live
+  // preview in the admin composer; uses the same splitter as posting.
+  app.post("/api/thread-preview", async (c) => {
+    if (!auth(c)) return c.json({ error: "unauthorized" }, 401);
+    const body = (await c.req.json().catch(() => null)) as { text?: unknown } | null;
+    const text = typeof body?.text === "string" ? body.text : "";
+    const segments = splitIntoThread(text, null);
+    return c.json({ segments, posts: segments.length });
   });
 
   // Create a note, deliver Create(Note) to followers, and POSSE to Bluesky.

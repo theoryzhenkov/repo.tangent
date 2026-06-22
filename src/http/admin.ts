@@ -6,47 +6,88 @@ function layout(title: string, body: string): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title}</title>
 <style>
-  :root { color-scheme: dark; }
+  :root {
+    color-scheme: dark;
+    --bg: #0e1014; --bg2: #14171f; --bg3: #181c26;
+    --fg: #e6e8ee; --muted: #8b93a7; --faint: #5b6478;
+    --border: #262b37; --border2: #2f3645;
+    --accent: #7aa2f7; --accent2: #9d7cf5; --good: #9ece6a; --warn: #e0af68;
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 15px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-    background: #0f1115; color: #e6e6e6; }
-  a { color: #7aa2f7; }
-  .wrap { max-width: 720px; margin: 0 auto; padding: 16px; }
-  header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
-  header .hint { color: #8b93a7; font-size: 12px; }
-  header .hint button { padding: 2px 7px; font-size: 12px; }
-  textarea, input[type=password] { width: 100%; background: #161922; color: #e6e6e6;
-    border: 1px solid #2a2f3a; border-radius: 8px; padding: 10px; font: inherit; resize: vertical; }
-  textarea:focus, input:focus, .note.sel { outline: none; border-color: #7aa2f7; }
-  .composer { margin: 12px 0 20px; }
-  .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
-  button { background: #232838; color: #e6e6e6; border: 1px solid #2a2f3a; border-radius: 8px;
-    padding: 6px 12px; font: inherit; cursor: pointer; }
-  button.primary { background: #2e4374; border-color: #3b5599; }
-  button:hover { border-color: #7aa2f7; }
-  .count { color: #8b93a7; font-size: 12px; margin-left: auto; }
-  .thumbs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  body { margin: 0; font: 15px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--bg); color: var(--fg);
+    background-image: radial-gradient(1100px 460px at 50% -8%, #171b27 0%, transparent 72%); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 20px 16px 64px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  header h1 .at { color: var(--accent); }
+  header .hint { color: var(--faint); font-size: 12px; }
+  header .hint kbd { color: var(--muted); background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 5px; padding: 0 5px; font: inherit; font-size: 11px; }
+  header .hint button { padding: 1px 8px; font-size: 12px; margin-left: 2px; }
+  textarea, input[type=password] { width: 100%; background: var(--bg2); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 10px; padding: 11px 12px; font: inherit; resize: vertical;
+    transition: border-color .15s, box-shadow .15s; }
+  textarea:focus, input:focus { outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(122,162,247,.12); }
+  .composer { position: sticky; top: 0; z-index: 5; margin: 14px 0 22px; padding: 14px;
+    background: rgba(20,23,31,.82); backdrop-filter: blur(8px);
+    border: 1px solid var(--border); border-radius: 14px; }
+  .row { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+  button { background: var(--bg3); color: var(--fg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 12px; font: inherit; cursor: pointer; transition: border-color .15s, background .15s, transform .05s, color .15s; }
+  button:hover { border-color: var(--accent); }
+  button:active { transform: translateY(1px); }
+  button.primary { background: linear-gradient(180deg, #34508c, #2b3f73); border-color: #3f5da6; color: #eaf0ff; }
+  .meter { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .meter-track { width: 84px; height: 6px; border-radius: 999px; background: var(--bg3);
+    overflow: hidden; border: 1px solid var(--border); }
+  .meter-fill { height: 100%; width: 0; background: var(--accent); transition: width .15s, background .15s; }
+  .meter.warn .meter-fill { background: var(--warn); }
+  .meter.thread .meter-fill { width: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+  .meter-label { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .meter.thread .meter-label { color: var(--accent2); }
+  .thread-preview { margin-top: 10px; display: grid; gap: 8px; }
+  .thread-preview .ph { color: var(--faint); font-size: 12px; }
+  .seg { border: 1px solid var(--border); border-left: 2px solid var(--accent2); border-radius: 8px;
+    background: var(--bg2); padding: 8px 10px; }
+  .seg .seg-head { color: var(--accent2); font-size: 11px; margin-bottom: 4px;
+    display: flex; justify-content: space-between; }
+  .seg .seg-body { white-space: pre-wrap; word-break: break-word; font-size: 13px; color: #cfd3de; }
+  .thumbs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
   .thumb { width: 120px; }
-  .thumb img { width: 120px; height: 80px; object-fit: cover; border-radius: 6px; border: 1px solid #2a2f3a; }
+  .thumb img { width: 120px; height: 80px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); }
   .thumb input { width: 120px; margin-top: 4px; font-size: 11px; padding: 3px 5px; }
   .thumb button { width: 120px; margin-top: 4px; padding: 2px; font-size: 11px; }
-  .note { border: 1px solid #2a2f3a; border-radius: 10px; padding: 12px; margin-bottom: 10px; }
-  .note .meta { color: #8b93a7; font-size: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
-  .note .body { margin: 6px 0; }
+  .note { border: 1px solid var(--border); border-radius: 12px; padding: 13px 14px; margin-bottom: 11px;
+    background: var(--bg2); transition: border-color .15s, box-shadow .15s; }
+  .note:hover { border-color: var(--border2); }
+  .note.sel { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(122,162,247,.10); }
+  .note .meta { color: var(--muted); font-size: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .note .meta .dot { color: var(--faint); }
+  .note .body { margin: 7px 0; }
   .note .body p { margin: 0 0 6px; }
+  .note .body a { color: var(--accent); }
   .note .atts { display: flex; gap: 6px; flex-wrap: wrap; }
-  .note .atts img { max-height: 120px; border-radius: 6px; border: 1px solid #2a2f3a; }
-  .note .ops { margin-top: 6px; display: flex; gap: 8px; }
-  .badge { color: #9ece6a; }
-  .empty { color: #8b93a7; padding: 20px 0; }
-  .notice { color: #9ece6a; border: 1px solid #30452b; background: #121b12; border-radius: 8px; padding: 8px 10px; margin-top: 8px; }
+  .note .atts img { max-height: 120px; border-radius: 6px; border: 1px solid var(--border); }
+  .note .ops { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .note .ops button { padding: 4px 9px; font-size: 12px; }
+  .chip { color: var(--accent); background: rgba(122,162,247,.10); border: 1px solid var(--border2);
+    border-radius: 999px; padding: 0 8px; font-size: 11px; }
+  .badge { color: var(--good); }
+  .empty { color: var(--muted); padding: 28px 0; text-align: center; }
+  .notice { color: var(--good); border: 1px solid #2c4326; background: #111a10; border-radius: 8px;
+    padding: 8px 11px; margin-top: 10px; animation: fade .25s ease; }
   .notice a { margin-right: 10px; }
-  .help { border: 1px solid #2a2f3a; border-radius: 10px; padding: 12px; margin: 12px 0; background: #11141d; }
-  .help h2 { margin: 0 0 8px; font-size: 14px; }
-  .help dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
-  .help dt { color: #9ece6a; }
+  @keyframes fade { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+  .help { border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin: 12px 0; background: var(--bg3); }
+  .help h2 { margin: 0 0 10px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  .help dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
+  .help dt { color: var(--good); }
   .help dd { margin: 0; color: #c7cad4; }
+  .copied { color: var(--good) !important; border-color: #2c4326 !important; }
 </style>
 </head>
 <body><div class="wrap">${body}</div></body>
@@ -72,8 +113,8 @@ export function adminPage(
 ): string {
   const publicNoteBase = notePermalinkBase ?? `https://${host}/notes`;
   const body = `<header>
-    <h1>tangent · @${handle}@${host}</h1>
-    <span class="hint">n new · ⌘↵ post · e edit · d delete · j/k move · g refresh · <button id="help-toggle" type="button">?</button></span>
+    <h1>tangent · <span class="at">@${handle}@${host}</span></h1>
+    <span class="hint"><kbd>n</kbd> new · <kbd>⌘↵</kbd> post · <kbd>j/k</kbd> move · <kbd>g</kbd> refresh · <button id="help-toggle" type="button">?</button></span>
   </header>
   <section id="help" class="help" hidden>
     <h2>Shortcuts</h2>
@@ -86,6 +127,7 @@ export function adminPage(
       <dt>g</dt><dd>refresh notes</dd>
       <dt>Esc</dt><dd>blur composer or close this help</dd>
       <dt>paste/drop</dt><dd>attach images</dd>
+      <dt>long notes</dt><dd>auto-split into a Bluesky thread — preview appears as you type</dd>
     </dl>
   </section>
   <div class="composer" data-public-note-base="${publicNoteBase.replace(/"/g, "&quot;")}">
@@ -97,8 +139,12 @@ export function adminPage(
       <button id="post" class="primary" type="button">Post</button>
       <button id="cancel" type="button" hidden>Cancel edit</button>
       <input id="file" type="file" accept="image/*" multiple hidden>
-      <span class="count" id="count">0</span>
+      <span class="meter" id="meter">
+        <span class="meter-track"><span class="meter-fill" id="meter-fill"></span></span>
+        <span class="meter-label" id="count">0 / 300</span>
+      </span>
     </div>
+    <div class="thread-preview" id="preview" hidden></div>
   </div>
   <div id="list"><div class="empty">Loading…</div></div>
   <form method="post" action="/admin/logout" style="margin-top:24px"><button type="submit">Sign out</button></form>
@@ -110,6 +156,11 @@ const ADMIN_SCRIPT = `<script type="module">
 const $ = (s) => document.querySelector(s);
 const textEl = $("#text"), thumbsEl = $("#thumbs"), listEl = $("#list"), countEl = $("#count"), noticeEl = $("#notice");
 const postBtn = $("#post"), cancelBtn = $("#cancel"), fileEl = $("#file"), helpEl = $("#help"), helpToggle = $("#help-toggle");
+const meterEl = $("#meter"), meterFill = $("#meter-fill"), previewEl = $("#preview");
+const LIMIT = 300;
+const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+function glen(s) { let n = 0; for (const _ of segmenter.segment(s)) n++; return n; }
+let previewTimer = null;
 const publicNoteBase = document.querySelector(".composer").dataset.publicNoteBase.replace(/\\/$/, "");
 const DRAFT_KEY = "tangent:admin:draft:v1";
 let pending = [];      // { mediaId, url, alt }
@@ -123,8 +174,57 @@ const esc = (s) => s.replace(/[&<>\"]/g, (c) => {
   if (c === ">") return "&gt;";
   return "&quot;";
 });
-const updateCount = () => { countEl.textContent = [...textEl.value].length; };
+function updateCount() {
+  const n = glen(textEl.value);
+  meterEl.classList.remove("warn", "thread");
+  if (editing) {
+    // Edits don't sync to Bluesky, so just show length — no thread preview.
+    meterFill.style.width = Math.min(100, (n / LIMIT) * 100) + "%";
+    countEl.textContent = n + (n === 1 ? " char" : " chars");
+    hidePreview();
+    return;
+  }
+  if (n > LIMIT) {
+    meterEl.classList.add("thread");
+    countEl.textContent = n + " · thread";
+    schedulePreview();
+  } else {
+    if (n > LIMIT * 0.9) meterEl.classList.add("warn");
+    meterFill.style.width = Math.min(100, (n / LIMIT) * 100) + "%";
+    countEl.textContent = n + " / " + LIMIT;
+    hidePreview();
+  }
+}
+function hidePreview() { previewEl.hidden = true; previewEl.innerHTML = ""; clearTimeout(previewTimer); }
+function schedulePreview() {
+  previewEl.hidden = false;
+  if (!previewEl.innerHTML) previewEl.innerHTML = '<div class="ph">building thread preview…</div>';
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(renderPreview, 300);
+}
+async function renderPreview() {
+  const text = textEl.value.trim();
+  if (!text || editing) { hidePreview(); return; }
+  let data;
+  try {
+    data = await api("/api/thread-preview", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
+  } catch { return; }
+  const segs = data.segments || [];
+  if (segs.length <= 1) { hidePreview(); return; }
+  countEl.textContent = glen(textEl.value) + " · " + segs.length + " posts";
+  previewEl.innerHTML = segs.map(function (s, i) {
+    return '<div class="seg"><div class="seg-head"><span>' + (i + 1) + "/" + segs.length + '</span><span>' + glen(s) + ' graphemes</span></div><div class="seg-body">' + esc(s) + "</div></div>";
+  }).join("");
+}
 function permalink(id) { return publicNoteBase + "/" + encodeURIComponent(id); }
+function relTime(iso) {
+  const d = new Date(iso), s = (Date.now() - d.getTime()) / 1000;
+  if (s < 45) return "just now";
+  if (s < 3600) return Math.round(s / 60) + "m ago";
+  if (s < 86400) return Math.round(s / 3600) + "h ago";
+  if (s < 604800) return Math.round(s / 86400) + "d ago";
+  return d.toLocaleDateString();
+}
 function blueskyWebUrl(uri) {
   try {
     const url = new URL(uri);
@@ -241,6 +341,17 @@ async function del(id) {
   await refresh();
 }
 
+function copyLink(btn, id) {
+  const done = () => {
+    const original = btn.textContent;
+    btn.textContent = "copied ✓"; btn.classList.add("copied");
+    setTimeout(() => { btn.textContent = original; btn.classList.remove("copied"); }, 1200);
+  };
+  const link = permalink(id);
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(link).then(done, () => prompt("Copy link:", link));
+  else prompt("Copy link:", link);
+}
+
 async function repost(id) {
   if (!confirm("Publish a new Bluesky post for this note and delete the old one? The new post gets a new URL and does not keep the old post's likes, reposts, or replies.")) return;
   const result = await api("/api/notes/" + id + "/resyndicate", { method: "POST" });
@@ -259,15 +370,17 @@ function render() {
     el.dataset.id = n.id;
     const atts = n.attachments.map((a) => '<img src="' + a.url + '" alt="' + esc(a.alt || "") + '">').join("");
     el.innerHTML =
-      '<div class="meta"><span>' + new Date(n.published).toLocaleString() + "</span>" +
-      (n.updated ? "<span>edited</span>" : "") +
-      (n.tags.length ? "<span>" + n.tags.map((t) => "#" + esc(t)).join(" ") + "</span>" : "") + "</div>" +
+      '<div class="meta"><span title="' + esc(new Date(n.published).toLocaleString()) + '">' + esc(relTime(n.published)) + "</span>" +
+      (n.updated ? '<span class="dot">·</span><span>edited</span>' : "") +
+      (n.tags.length ? '<span class="dot">·</span>' + n.tags.map((t) => '<span class="chip">#' + esc(t) + "</span>").join(" ") : "") + "</div>" +
       '<div class="body">' + n.html + "</div>" +
       (atts ? '<div class="atts">' + atts + "</div>" : "") +
       '<div class="ops"><button data-op="edit">edit</button>' +
+      '<button data-op="copy">copy link</button>' +
       (n.inReplyTo ? "" : '<button data-op="repost">repost to Bluesky</button>') +
       '<button data-op="del">delete</button></div>';
     el.querySelector('[data-op="edit"]').addEventListener("click", () => startEdit(n));
+    el.querySelector('[data-op="copy"]').addEventListener("click", (e) => copyLink(e.target, n.id));
     el.querySelector('[data-op="repost"]')?.addEventListener("click", () => repost(n.id));
     el.querySelector('[data-op="del"]').addEventListener("click", () => del(n.id));
     el.addEventListener("click", () => { sel = i; render(); });
