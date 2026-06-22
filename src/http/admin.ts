@@ -56,6 +56,11 @@ function layout(title: string, body: string): string {
   .seg .seg-head { color: var(--accent2); font-size: 11px; margin-bottom: 4px;
     display: flex; justify-content: space-between; }
   .seg .seg-body { white-space: pre-wrap; word-break: break-word; font-size: 13px; color: #cfd3de; }
+  .seg-head button { padding: 1px 8px; font-size: 11px; }
+  .xthread { margin-top: 10px; display: grid; gap: 8px; }
+  .xthread-head { color: var(--muted); font-size: 12px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .xthread .seg { border-left-color: #1d9bf0; }
+  .xthread .seg .seg-head { color: #6cb7e8; }
   .thumbs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
   .thumb { width: 120px; }
   .thumb img { width: 120px; height: 80px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); }
@@ -341,15 +346,53 @@ async function del(id) {
   await refresh();
 }
 
-function copyLink(btn, id) {
-  const done = () => {
+function copyToClipboard(btn, text) {
+  const flash = () => {
     const original = btn.textContent;
     btn.textContent = "copied ✓"; btn.classList.add("copied");
     setTimeout(() => { btn.textContent = original; btn.classList.remove("copied"); }, 1200);
   };
-  const link = permalink(id);
-  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(link).then(done, () => prompt("Copy link:", link));
-  else prompt("Copy link:", link);
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(flash, () => prompt("Copy:", text));
+  else prompt("Copy:", text);
+}
+
+// Manual X (Twitter) syndication helper: split the note into 280-char tweets
+// (permalink counted as a shortened 23) and offer per-tweet copy buttons plus
+// an "open X composer" intent link prefilled with the first tweet.
+async function copyForX(note, btn) {
+  const noteEl = btn.closest(".note");
+  const open = noteEl.querySelector(".xthread");
+  if (open) { open.remove(); return; } // toggle off
+
+  let data;
+  try {
+    data = await api("/api/thread-preview", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: note.text, limit: 280, permalink: permalink(note.id), permalinkWeight: 25 }),
+    });
+  } catch { return; }
+  const segs = (data.segments || []).filter((s) => s.length > 0);
+  if (segs.length === 0) return;
+
+  const panel = document.createElement("div");
+  panel.className = "xthread";
+  const intent = "https://x.com/intent/post?text=" + encodeURIComponent(segs[0]);
+  panel.innerHTML =
+    '<div class="xthread-head"><span>' + segs.length + (segs.length === 1 ? " tweet" : " tweets") + "</span>" +
+    '<a href="' + intent + '" target="_blank" rel="noopener noreferrer">open X composer ↗</a></div>' +
+    segs.map((s, i) =>
+      '<div class="seg"><div class="seg-head"><span>' + (i + 1) + "/" + segs.length + "</span>" +
+      '<button data-xcopy="' + i + '">copy</button></div><div class="seg-body">' + esc(s) + "</div></div>"
+    ).join("");
+  panel.querySelectorAll("[data-xcopy]").forEach((b) => {
+    b.addEventListener("click", () => copyToClipboard(b, segs[Number(b.getAttribute("data-xcopy"))]));
+  });
+  noteEl.appendChild(panel);
+}
+
+function copyLink(btn, id) {
+  copyToClipboard(btn, permalink(id));
 }
 
 async function repost(id) {
@@ -378,10 +421,12 @@ function render() {
       '<div class="ops"><button data-op="edit">edit</button>' +
       '<button data-op="copy">copy link</button>' +
       (n.inReplyTo ? "" : '<button data-op="repost">repost to Bluesky</button>') +
+      (n.inReplyTo ? "" : '<button data-op="x">copy for X</button>') +
       '<button data-op="del">delete</button></div>';
     el.querySelector('[data-op="edit"]').addEventListener("click", () => startEdit(n));
     el.querySelector('[data-op="copy"]').addEventListener("click", (e) => copyLink(e.target, n.id));
     el.querySelector('[data-op="repost"]')?.addEventListener("click", () => repost(n.id));
+    el.querySelector('[data-op="x"]')?.addEventListener("click", (e) => copyForX(n, e.target));
     el.querySelector('[data-op="del"]').addEventListener("click", () => del(n.id));
     el.addEventListener("click", () => { sel = i; render(); });
     listEl.appendChild(el);

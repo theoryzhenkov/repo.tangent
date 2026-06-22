@@ -78,11 +78,15 @@ export function splitIntoThread(
   noteText: string,
   permalink: string | null,
   limit = BLUESKY_LIMIT,
+  suffixWeight?: number,
 ): string[] {
   const body = noteText.trim();
   const suffix = permalink != null ? `\n\n${permalink}` : "";
+  // How many of the limit's graphemes the suffix consumes. Defaults to its
+  // literal length; callers can override (e.g. Twitter shortens any URL to 23).
+  const suffixCost = suffix === "" ? 0 : suffixWeight ?? graphemeLength(suffix);
 
-  if (graphemeLength(body) + graphemeLength(suffix) <= limit) {
+  if (graphemeLength(body) + suffixCost <= limit) {
     return [body + suffix];
   }
 
@@ -92,7 +96,7 @@ export function splitIntoThread(
   if (suffix !== "") {
     const lastIndex = segments.length - 1;
     const last = segments[lastIndex] ?? "";
-    if (graphemeLength(last) + graphemeLength(suffix) <= limit) {
+    if (graphemeLength(last) + suffixCost <= limit) {
       segments[lastIndex] = last + suffix;
     } else {
       segments.push(suffix.trimStart());

@@ -163,13 +163,31 @@ export function createApp({
     });
   });
 
-  // Preview how a note would be split into a Bluesky thread. Powers the live
-  // preview in the admin composer; uses the same splitter as posting.
+  // Split a note into thread segments. Powers the live Bluesky preview in the
+  // composer (defaults) and the manual "copy for X" helper (limit 280 with the
+  // permalink counted as a shortened 23). Same splitter as real posting.
   app.post("/api/thread-preview", async (c) => {
     if (!auth(c)) return c.json({ error: "unauthorized" }, 401);
-    const body = (await c.req.json().catch(() => null)) as { text?: unknown } | null;
+    const body = (await c.req.json().catch(() => null)) as {
+      text?: unknown;
+      limit?: unknown;
+      permalink?: unknown;
+      permalinkWeight?: unknown;
+    } | null;
     const text = typeof body?.text === "string" ? body.text : "";
-    const segments = splitIntoThread(text, null);
+    const permalink =
+      typeof body?.permalink === "string" && body.permalink !== ""
+        ? body.permalink
+        : null;
+    const limit =
+      typeof body?.limit === "number" && Number.isFinite(body.limit)
+        ? Math.min(Math.max(Math.trunc(body.limit), 1), 300)
+        : 300;
+    const weight =
+      typeof body?.permalinkWeight === "number" && Number.isFinite(body.permalinkWeight)
+        ? Math.max(0, Math.trunc(body.permalinkWeight))
+        : undefined;
+    const segments = splitIntoThread(text, permalink, limit, weight);
     return c.json({ segments, posts: segments.length });
   });
 
