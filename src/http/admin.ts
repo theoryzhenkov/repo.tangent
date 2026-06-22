@@ -377,7 +377,7 @@ async function copyForX(note, btn) {
 
   const panel = document.createElement("div");
   panel.className = "xthread";
-  const intent = "https://x.com/intent/post?text=" + encodeURIComponent(segs[0]);
+  const intent = "https://x.com/intent/tweet?text=" + encodeURIComponent(segs[0]);
   panel.innerHTML =
     '<div class="xthread-head"><span>' + segs.length + (segs.length === 1 ? " tweet" : " tweets") + "</span>" +
     '<a href="' + intent + '" target="_blank" rel="noopener noreferrer">open X composer ↗</a></div>' +
@@ -428,7 +428,13 @@ function render() {
     el.querySelector('[data-op="repost"]')?.addEventListener("click", () => repost(n.id));
     el.querySelector('[data-op="x"]')?.addEventListener("click", (e) => copyForX(n, e.target));
     el.querySelector('[data-op="del"]').addEventListener("click", () => del(n.id));
-    el.addEventListener("click", () => { sel = i; render(); });
+    el.addEventListener("click", (e) => {
+      // Don't reselect/re-render when interacting with a control (buttons,
+      // links, the X-thread panel) — a re-render would tear out panels that
+      // copyForX appends after its async fetch.
+      if (e.target.closest("button, a, .xthread")) return;
+      sel = i; render();
+    });
     listEl.appendChild(el);
   });
 }
