@@ -1,9 +1,22 @@
 import { createFederation } from "@fedify/fedify";
-import { Endpoints, Note, Person, type Recipient } from "@fedify/fedify/vocab";
+import {
+  Accept,
+  Endpoints,
+  Follow,
+  Note,
+  Person,
+  type Recipient,
+  Undo,
+} from "@fedify/fedify/vocab";
 import { PostgresKvStore } from "@fedify/postgres/kv";
 import { PostgresMessageQueue } from "@fedify/postgres/mq";
 import type { Database } from "../db/client.ts";
-import { countFollowers, listFollowers } from "../store/followers.ts";
+import {
+  addFollower,
+  countFollowers,
+  listFollowers,
+  removeFollower,
+} from "../store/followers.ts";
 import { countNotes, getNote, listNotes } from "../store/notes.ts";
 import { loadActorKeyPairs } from "./keys.ts";
 import { toCreateActivity, toNoteObject } from "./objects.ts";
@@ -39,8 +52,44 @@ export function createTangentFederation(deps: FederationDeps) {
     origin: { handleHost, webOrigin },
   });
 
-  // Inbox routes; activity handlers (Follow, replies, …) land in later milestones.
-  federation.setInboxListeners("/users/{identifier}/inbox", "/inbox");
+  federation
+    .setInboxListeners("/users/{identifier}/inbox", "/inbox")
+    .on(Follow, async (ctx, follow) => {
+      if (follow.objectId == null || follow.actorId == null) return;
+      const target = ctx.parseUri(follow.objectId);
+      if (target?.type !== "actor" || target.identifier !== actorHandle) return;
+
+      const follower = await follow.getActor(ctx);
+      if (follower?.id == null || follower.inboxId == null) return;
+
+      await addFollower(database, {
+        uri: follower.id.href,
+        handle: follower.preferredUsername?.toString() ?? null,
+        name: follower.name?.toString() ?? null,
+        inboxUrl: follower.inboxId.href,
+        sharedInboxUrl: follower.endpoints?.sharedInbox?.href ?? null,
+      });
+
+      await ctx.sendActivity(
+        { identifier: actorHandle },
+        follower,
+        new Accept({ actor: follow.objectId, object: follow }),
+      );
+      console.info(`tangent: accepted follow from ${follower.id.href}`);
+    })
+    .on(Undo, async (ctx, undo) => {
+      const object = await undo.getObject(ctx);
+      if (!(object instanceof Follow)) return;
+      if (object.objectId == null || undo.actorId == null) return;
+      const target = ctx.parseUri(object.objectId);
+      if (target?.type !== "actor" || target.identifier !== actorHandle) return;
+
+      await removeFollower(database, undo.actorId.href);
+      console.info(`tangent: removed follower ${undo.actorId.href}`);
+    })
+    .onError(async (_ctx, error) => {
+      console.error("tangent: inbox listener error", error);
+    });
 
   federation
     .setActorDispatcher("/users/{identifier}", async (ctx, identifier) => {
