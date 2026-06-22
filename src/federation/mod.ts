@@ -1,9 +1,14 @@
 import { createFederation } from "@fedify/fedify";
-import { Endpoints, Person } from "@fedify/fedify/vocab";
+import { Endpoints, Note, Person, type Recipient } from "@fedify/fedify/vocab";
 import { PostgresKvStore } from "@fedify/postgres/kv";
 import { PostgresMessageQueue } from "@fedify/postgres/mq";
 import type { Database } from "../db/client.ts";
+import { countFollowers, listFollowers } from "../store/followers.ts";
+import { countNotes, getNote, listNotes } from "../store/notes.ts";
 import { loadActorKeyPairs } from "./keys.ts";
+import { toCreateActivity, toNoteObject } from "./objects.ts";
+
+const OUTBOX_WINDOW = 20;
 
 /** Context data shared with every Fedify dispatcher/listener. */
 export interface FedContextData {
@@ -29,13 +34,12 @@ export function createTangentFederation(deps: FederationDeps) {
   const federation = createFederation<FedContextData>({
     kv,
     queue,
-    // Split-domain: handle is @theor@theor.net, but actor/collection URIs
-    // live under https://ap.theor.net.
+    // Split-domain: handle is @theor@theor.net, actor/collection URIs live
+    // under https://ap.theor.net.
     origin: { handleHost, webOrigin },
   });
 
-  // Register the inbox routes so the actor can advertise its inbox/sharedInbox
-  // URIs. Activity handlers (Follow, replies, …) are wired in later milestones.
+  // Inbox routes; activity handlers (Follow, replies, …) land in later milestones.
   federation.setInboxListeners("/users/{identifier}/inbox", "/inbox");
 
   federation
@@ -48,15 +52,76 @@ export function createTangentFederation(deps: FederationDeps) {
         name: actorHandle,
         url: new URL("/", `https://${handleHost}`),
         inbox: ctx.getInboxUri(identifier),
+        outbox: ctx.getOutboxUri(identifier),
+        followers: ctx.getFollowersUri(identifier),
         endpoints: new Endpoints({ sharedInbox: ctx.getInboxUri() }),
         publicKey: actorKeys[0]?.cryptographicKey,
         assertionMethods: actorKeys.map((key) => key.multikey),
       });
     })
-    .setKeyPairsDispatcher(async (_ctx, identifier) => {
-      if (identifier !== actorHandle) return [];
-      return await loadActorKeyPairs(database);
-    });
+    .setKeyPairsDispatcher(async (_ctx, identifier) =>
+      identifier === actorHandle ? await loadActorKeyPairs(database) : [],
+    );
+
+  // Individual notes must be dereferenceable by their URIs.
+  federation.setObjectDispatcher(
+    Note,
+    "/users/{identifier}/notes/{noteId}",
+    async (ctx, { identifier, noteId }) => {
+      if (identifier !== actorHandle) return null;
+      const row = await getNote(database, noteId);
+      if (row == null) return null;
+      return toNoteObject(ctx, identifier, row);
+    },
+  );
+
+  federation
+    .setOutboxDispatcher(
+      "/users/{identifier}/outbox",
+      async (ctx, identifier, cursor) => {
+        if (identifier !== actorHandle || cursor == null) return null;
+        const page = await listNotes(database, {
+          cursor,
+          limit: OUTBOX_WINDOW,
+        });
+        return {
+          items: page.items.map((row) => toCreateActivity(ctx, identifier, row)),
+          nextCursor: page.nextCursor,
+        };
+      },
+    )
+    .setFirstCursor(async (_ctx, identifier) =>
+      identifier === actorHandle ? "" : null,
+    )
+    .setCounter(async (_ctx, identifier) =>
+      identifier === actorHandle ? await countNotes(database) : 0,
+    );
+
+  federation
+    .setFollowersDispatcher(
+      "/users/{identifier}/followers",
+      // Returns the entire collection in one shot (cursor ignored) so
+      // sendActivity(..., "followers", ...) can gather every recipient.
+      async (_ctx, identifier) => {
+        if (identifier !== actorHandle) return null;
+        const rows = await listFollowers(database);
+        const items: Recipient[] = rows.map((row) => ({
+          id: new URL(row.actorUri),
+          inboxId: new URL(row.inboxUrl),
+          endpoints:
+            row.sharedInboxUrl != null
+              ? { sharedInbox: new URL(row.sharedInboxUrl) }
+              : null,
+        }));
+        return { items };
+      },
+    )
+    .setFirstCursor(async (_ctx, identifier) =>
+      identifier === actorHandle ? "" : null,
+    )
+    .setCounter(async (_ctx, identifier) =>
+      identifier === actorHandle ? await countFollowers(database) : 0,
+    );
 
   return { federation, kv, queue };
 }
