@@ -14,23 +14,91 @@ export interface BlueskyImage {
   alt: string | null;
 }
 
-const BLUESKY_LIMIT = 300; // graphemes
+const BLUESKY_LIMIT = 300; // graphemes per post
+
+const graphemeSegmenter = new Intl.Segmenter("en", { granularity: "grapheme" });
+
+function graphemes(text: string): string[] {
+  return Array.from(graphemeSegmenter.segment(text), (s) => s.segment);
+}
+
+function graphemeLength(text: string): number {
+  let count = 0;
+  for (const _ of graphemeSegmenter.segment(text)) count++;
+  return count;
+}
+
+// Pack a note body into segments of at most `limit` graphemes, breaking on
+// whitespace (including paragraph breaks). A single token longer than the
+// limit (e.g. a very long URL) is hard-split by graphemes.
+function packBody(body: string, limit: number): string[] {
+  const segments: string[] = [];
+  let current = "";
+  const flush = () => {
+    const trimmed = current.trim();
+    if (trimmed !== "") segments.push(trimmed);
+    current = "";
+  };
+
+  for (const token of body.split(/(\s+)/)) {
+    if (token === "") continue;
+    if (graphemeLength(current) + graphemeLength(token) <= limit) {
+      current += token;
+      continue;
+    }
+    if (/^\s+$/.test(token)) {
+      // Whitespace that doesn't fit is a clean break point.
+      flush();
+      continue;
+    }
+    flush();
+    if (graphemeLength(token) <= limit) {
+      current = token;
+      continue;
+    }
+    // Oversized single token: hard-split into limit-sized chunks.
+    const chars = graphemes(token);
+    for (let i = 0; i < chars.length; i += limit) {
+      const chunk = chars.slice(i, i + limit).join("");
+      if (graphemeLength(chunk) === limit) segments.push(chunk);
+      else current = chunk;
+    }
+  }
+  flush();
+  return segments;
+}
 
 /**
- * Build the Bluesky post text from a note: append a permalink (POSSE backlink)
- * and truncate to fit Bluesky's grapheme limit.
+ * Split a note into Bluesky-sized segments for a thread. Short notes return a
+ * single segment (no behavior change). The permalink (POSSE backlink) is
+ * appended to the final segment, or posted as its own trailing segment when it
+ * doesn't fit. Each segment is at most `limit` graphemes.
  */
-export function buildBlueskyText(
+export function splitIntoThread(
   noteText: string,
   permalink: string | null,
   limit = BLUESKY_LIMIT,
-): string {
+): string[] {
   const body = noteText.trim();
   const suffix = permalink != null ? `\n\n${permalink}` : "";
-  const budget = limit - Array.from(suffix).length;
-  const chars = Array.from(body);
-  if (chars.length <= budget) return body + suffix;
-  return `${chars.slice(0, Math.max(0, budget - 1)).join("")}…${suffix}`;
+
+  if (graphemeLength(body) + graphemeLength(suffix) <= limit) {
+    return [body + suffix];
+  }
+
+  const segments = packBody(body, limit);
+  if (segments.length === 0) segments.push("");
+
+  if (suffix !== "") {
+    const lastIndex = segments.length - 1;
+    const last = segments[lastIndex] ?? "";
+    if (graphemeLength(last) + graphemeLength(suffix) <= limit) {
+      segments[lastIndex] = last + suffix;
+    } else {
+      segments.push(suffix.trimStart());
+    }
+  }
+  return segments;
 }
 
 /** Thin Bluesky (AT Protocol) client that lazily logs in with an app password. */
@@ -90,17 +158,45 @@ export class BlueskyClient {
     return record;
   }
 
+  /**
+   * Post a note to Bluesky. If the text exceeds the per-post grapheme limit it
+   * is split into a reply-chain thread; otherwise a single post is made. Images
+   * attach to the first post. Returns the root post's ref (the thread head),
+   * which is what we store as the syndication target.
+   */
   async post(input: {
     text: string;
+    permalink?: string | null;
     images?: BlueskyImage[];
   }): Promise<BlueskyPostResult> {
     await this.#ensureLogin();
-    const record = await this.#composeRecord(input.text, input.images ?? []);
-    const result = await this.#agent.post({
-      ...record,
-      createdAt: new Date().toISOString(),
-    });
-    return { uri: result.uri, cid: result.cid };
+    const segments = splitIntoThread(input.text, input.permalink ?? null);
+
+    let root: BlueskyPostResult | null = null;
+    let parent: BlueskyPostResult | null = null;
+    for (const segment of segments) {
+      const record = await this.#composeRecord(
+        segment,
+        root == null ? input.images ?? [] : [],
+      );
+      const reply =
+        root != null && parent != null
+          ? {
+              root: { uri: root.uri, cid: root.cid },
+              parent: { uri: parent.uri, cid: parent.cid },
+            }
+          : undefined;
+      const result = await this.#agent.post({
+        ...record,
+        createdAt: new Date().toISOString(),
+        ...(reply != null ? { reply } : {}),
+      });
+      const ref = { uri: result.uri, cid: result.cid };
+      root ??= ref;
+      parent = ref;
+    }
+
+    return root as BlueskyPostResult;
   }
 
   async deletePost(uri: string): Promise<void> {

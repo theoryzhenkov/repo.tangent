@@ -5,7 +5,6 @@ import { deleteCookie, setCookie } from "hono/cookie";
 import {
   type BlueskyClient,
   type BlueskyImage,
-  buildBlueskyText,
 } from "../bluesky/client.ts";
 import type { Config } from "../config.ts";
 import type { Database } from "../db/client.ts";
@@ -203,7 +202,8 @@ export function createApp({
     if (bluesky != null && note.inReplyTo == null) {
       try {
         const result = await bluesky.post({
-          text: buildBlueskyText(note.text, notePermalink(note.id)),
+          text: note.text,
+          permalink: notePermalink(note.id),
           images: await blueskyImages(attachments),
         });
         await recordSyndication(database, note.id, "bluesky", result.uri, result.cid);
@@ -272,7 +272,8 @@ export function createApp({
     let result;
     try {
       result = await bluesky.post({
-        text: buildBlueskyText(note.text, notePermalink(note.id)),
+        text: note.text,
+        permalink: notePermalink(note.id),
         images: await blueskyImages(note.attachments),
       });
     } catch (error) {
