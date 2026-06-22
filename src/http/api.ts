@@ -1,5 +1,10 @@
 import { Hono } from "hono";
 import type { Database } from "../db/client.ts";
+import {
+  countInteractions,
+  type InboxObjectRow,
+  listReplies,
+} from "../store/inbox.ts";
 import { getNote, listNotes, type NoteRow } from "../store/notes.ts";
 
 function serializeNote(row: NoteRow) {
@@ -14,6 +19,22 @@ function serializeNote(row: NoteRow) {
     visibility: row.visibility,
     published: row.publishedAt.toISOString(),
     updated: row.updatedAt != null ? row.updatedAt.toISOString() : null,
+  };
+}
+
+function serializeReply(row: InboxObjectRow) {
+  const raw = (row.raw ?? {}) as {
+    content?: string;
+    published?: string | null;
+    url?: string | null;
+    attributedTo?: string;
+  };
+  return {
+    id: row.uri,
+    actor: raw.attributedTo ?? row.actorUri,
+    content: raw.content ?? "",
+    published: raw.published ?? row.receivedAt.toISOString(),
+    url: raw.url ?? row.uri,
   };
 }
 
@@ -35,10 +56,21 @@ export function createNotesApi(database: Database): Hono {
   });
 
   api.get("/notes/:id/thread", async (c) => {
-    const row = await getNote(database, c.req.param("id"));
+    const id = c.req.param("id");
+    const row = await getNote(database, id);
     if (row == null) return c.json({ error: "not found" }, 404);
-    // Ancestors/replies are filled from inbox activities in a later milestone.
-    return c.json({ note: serializeNote(row), ancestors: [], replies: [] });
+    const [replies, likes, announces] = await Promise.all([
+      listReplies(database, id),
+      countInteractions(database, id, "like"),
+      countInteractions(database, id, "announce"),
+    ]);
+    return c.json({
+      note: serializeNote(row),
+      ancestors: [],
+      replies: replies.map(serializeReply),
+      likes,
+      announces,
+    });
   });
 
   return api;

@@ -21,6 +21,17 @@ export function buildNoteUri(
   return `${apOrigin}/users/${actorHandle}/notes/${id}`;
 }
 
+/** Return the local note id if `uri` addresses one of our notes, else null. */
+export function localNoteId(
+  apOrigin: string,
+  actorHandle: string,
+  uri: string | null | undefined,
+): string | null {
+  if (uri == null) return null;
+  const prefix = `${apOrigin}/users/${actorHandle}/notes/`;
+  return uri.startsWith(prefix) ? uri.slice(prefix.length) : null;
+}
+
 export async function createNote(
   database: Database,
   apOrigin: string,

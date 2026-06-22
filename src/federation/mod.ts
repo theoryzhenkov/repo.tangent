@@ -1,8 +1,12 @@
 import { createFederation } from "@fedify/fedify";
 import {
   Accept,
+  Announce,
+  Create,
+  Delete,
   Endpoints,
   Follow,
+  Like,
   Note,
   Person,
   type Recipient,
@@ -17,7 +21,16 @@ import {
   listFollowers,
   removeFollower,
 } from "../store/followers.ts";
-import { countNotes, getNote, listNotes } from "../store/notes.ts";
+import {
+  deleteInboxObjectByUri,
+  recordInboxObject,
+} from "../store/inbox.ts";
+import {
+  countNotes,
+  getNote,
+  listNotes,
+  localNoteId,
+} from "../store/notes.ts";
 import { loadActorKeyPairs } from "./keys.ts";
 import { toCreateActivity, toNoteObject } from "./objects.ts";
 
@@ -86,6 +99,64 @@ export function createTangentFederation(deps: FederationDeps) {
 
       await removeFollower(database, undo.actorId.href);
       console.info(`tangent: removed follower ${undo.actorId.href}`);
+    })
+    .on(Create, async (ctx, create) => {
+      const object = await create.getObject(ctx);
+      if (!(object instanceof Note) || object.id == null || create.actorId == null) {
+        return;
+      }
+      const targetNoteId = localNoteId(
+        webOrigin,
+        actorHandle,
+        object.replyTargetId?.href,
+      );
+      if (targetNoteId == null) return; // only keep replies to our notes
+      await recordInboxObject(database, {
+        uri: object.id.href,
+        type: "reply",
+        actorUri: create.actorId.href,
+        targetNoteId,
+        raw: {
+          content: object.content?.toString() ?? "",
+          published: object.published?.toString() ?? null,
+          url: object.url instanceof URL ? object.url.href : null,
+          attributedTo: create.actorId.href,
+        },
+      });
+    })
+    .on(Like, async (_ctx, like) => {
+      if (like.objectId == null || like.actorId == null) return;
+      const targetNoteId = localNoteId(webOrigin, actorHandle, like.objectId.href);
+      if (targetNoteId == null) return;
+      await recordInboxObject(database, {
+        uri: like.id?.href ?? `${like.actorId.href}#like-${targetNoteId}`,
+        type: "like",
+        actorUri: like.actorId.href,
+        targetNoteId,
+      });
+    })
+    .on(Announce, async (_ctx, announce) => {
+      if (announce.objectId == null || announce.actorId == null) return;
+      const targetNoteId = localNoteId(
+        webOrigin,
+        actorHandle,
+        announce.objectId.href,
+      );
+      if (targetNoteId == null) return;
+      await recordInboxObject(database, {
+        uri: announce.id?.href ?? `${announce.actorId.href}#announce-${targetNoteId}`,
+        type: "announce",
+        actorUri: announce.actorId.href,
+        targetNoteId,
+      });
+    })
+    .on(Delete, async (_ctx, del) => {
+      if (del.objectId == null) return;
+      await deleteInboxObjectByUri(database, del.objectId.href);
+      // A remote actor deleting itself unfollows us.
+      if (del.actorId != null && del.objectId.href === del.actorId.href) {
+        await removeFollower(database, del.actorId.href);
+      }
     })
     .onError(async (_ctx, error) => {
       console.error("tangent: inbox listener error", error);
