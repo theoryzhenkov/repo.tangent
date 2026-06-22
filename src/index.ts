@@ -20,7 +20,7 @@ await kv.initialize();
 await queue.initialize();
 await ensureActorKeys(database);
 
-const app = createApp({ database, federation });
+const app = createApp({ database, federation, config });
 
 console.log(`tangent listening on :${config.port}`);
 

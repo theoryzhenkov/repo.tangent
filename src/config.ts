@@ -17,6 +17,8 @@ export interface Config {
   handleHost: string;
   apOrigin: string;
   actorHandle: string;
+  /** Bearer token required by the compose endpoint; compose is disabled if null. */
+  composeToken: string | null;
 }
 
 export function loadConfig(): Config {
@@ -26,5 +28,6 @@ export function loadConfig(): Config {
     handleHost: optional("HANDLE_HOST", "theor.net"),
     apOrigin: optional("AP_ORIGIN", "https://ap.theor.net"),
     actorHandle: optional("ACTOR_HANDLE", "theor"),
+    composeToken: process.env.COMPOSE_TOKEN?.trim() || null,
   };
 }
