@@ -25,8 +25,8 @@ CREATE TABLE "inbox_objects" (
 --> statement-breakpoint
 CREATE TABLE "keys" (
 	"type" text PRIMARY KEY NOT NULL,
-	"private_pem" text NOT NULL,
-	"public_pem" text NOT NULL,
+	"private_jwk" jsonb NOT NULL,
+	"public_jwk" jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint

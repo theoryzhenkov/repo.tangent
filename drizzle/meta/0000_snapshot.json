@@ -1,5 +1,5 @@
 {
-  "id": "56eed9c8-3766-4bd5-a200-175b1aaad3b7",
+  "id": "a309bc29-e34e-4ea9-92e6-616baa082159",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -211,15 +211,15 @@
           "primaryKey": true,
           "notNull": true
         },
-        "private_pem": {
-          "name": "private_pem",
-          "type": "text",
+        "private_jwk": {
+          "name": "private_jwk",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": true
         },
-        "public_pem": {
-          "name": "public_pem",
-          "type": "text",
+        "public_jwk": {
+          "name": "public_jwk",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": true
         },

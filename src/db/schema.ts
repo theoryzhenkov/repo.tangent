@@ -9,6 +9,32 @@ import {
 } from "drizzle-orm/pg-core";
 
 /**
+ * JSON Web Key shape, declared structurally so we don't pull the DOM lib into a
+ * server build just for the global `JsonWebKey` type. Structurally identical to
+ * WebCrypto's `JsonWebKey`, so it stays assignable to/from Fedify's JWK APIs.
+ */
+export interface Jwk {
+  kty?: string;
+  use?: string;
+  key_ops?: string[];
+  alg?: string;
+  ext?: boolean;
+  crv?: string;
+  x?: string;
+  y?: string;
+  d?: string;
+  n?: string;
+  e?: string;
+  p?: string;
+  q?: string;
+  dp?: string;
+  dq?: string;
+  qi?: string;
+  k?: string;
+  oth?: { r?: string; d?: string; t?: string }[];
+}
+
+/**
  * Local notes authored here. These are the only content that federates
  * (to the fediverse via Fedify and to Bluesky via POSSE). Pages live in the
  * Home repo as MDX and never federate.
@@ -74,11 +100,11 @@ export const inboxObjects = pgTable(
   ],
 );
 
-/** Our actor signing keypairs (RSA-PKCS#1-v1.5 and Ed25519). */
+/** Our actor signing keypairs (RSA-PKCS#1-v1.5 and Ed25519), stored as JWK. */
 export const keys = pgTable("keys", {
   type: text("type").primaryKey(), // "rsa" | "ed25519"
-  privatePem: text("private_pem").notNull(),
-  publicPem: text("public_pem").notNull(),
+  privateJwk: jsonb("private_jwk").$type<Jwk>().notNull(),
+  publicJwk: jsonb("public_jwk").$type<Jwk>().notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

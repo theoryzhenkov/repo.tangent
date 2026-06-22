@@ -12,6 +12,9 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
+    "@fedify/fedify": "^2.2.5",
+    "@fedify/hono": "^2.2.5",
+    "@fedify/postgres": "^2.2.5",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.25",
     "postgres": "^3.4.9"
