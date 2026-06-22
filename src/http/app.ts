@@ -172,7 +172,7 @@ export function createApp({
       text?: unknown;
       limit?: unknown;
       permalink?: unknown;
-      permalinkWeight?: unknown;
+      weighted?: unknown;
     } | null;
     const text = typeof body?.text === "string" ? body.text : "";
     const permalink =
@@ -183,11 +183,8 @@ export function createApp({
       typeof body?.limit === "number" && Number.isFinite(body.limit)
         ? Math.min(Math.max(Math.trunc(body.limit), 1), 300)
         : 300;
-    const weight =
-      typeof body?.permalinkWeight === "number" && Number.isFinite(body.permalinkWeight)
-        ? Math.max(0, Math.trunc(body.permalinkWeight))
-        : undefined;
-    const segments = splitIntoThread(text, permalink, limit, weight);
+    const weighted = body?.weighted === true;
+    const segments = splitIntoThread(text, permalink, { limit, weighted });
     return c.json({ segments, posts: segments.length });
   });
 

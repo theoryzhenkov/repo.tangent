@@ -28,75 +28,128 @@ function graphemeLength(text: string): number {
   return count;
 }
 
-// Pack a note body into segments of at most `limit` graphemes, breaking on
-// whitespace (including paragraph breaks). A single token longer than the
-// limit (e.g. a very long URL) is hard-split by graphemes.
-function packBody(body: string, limit: number): string[] {
+type Measure = (text: string) => number;
+
+const URL_RE = /https?:\/\/[^\s]+/gi;
+const TWITTER_URL_WEIGHT = 23; // every URL shortens to a t.co link
+
+// Twitter-weighted length: each URL counts as a fixed 23 regardless of its
+// actual length; everything else counts by grapheme. Used for the X path so a
+// long link doesn't push apart text that actually fits.
+function twitterLength(text: string): number {
+  let total = 0;
+  let last = 0;
+  for (const m of text.matchAll(URL_RE)) {
+    const at = m.index ?? 0;
+    total += graphemeLength(text.slice(last, at)) + TWITTER_URL_WEIGHT;
+    last = at + m[0].length;
+  }
+  return total + graphemeLength(text.slice(last));
+}
+
+// Greedily pack a single paragraph's words into <=limit segments, breaking on
+// whitespace. An oversized lone token (e.g. a giant URL under literal counting)
+// is hard-split by graphemes.
+function packWords(text: string, limit: number, measure: Measure): string[] {
   const segments: string[] = [];
   let current = "";
   const flush = () => {
-    const trimmed = current.trim();
-    if (trimmed !== "") segments.push(trimmed);
+    const t = current.trim();
+    if (t !== "") segments.push(t);
     current = "";
   };
 
-  for (const token of body.split(/(\s+)/)) {
+  for (const token of text.split(/(\s+)/)) {
     if (token === "") continue;
-    if (graphemeLength(current) + graphemeLength(token) <= limit) {
+    if (measure(current) + measure(token) <= limit) {
       current += token;
       continue;
     }
     if (/^\s+$/.test(token)) {
-      // Whitespace that doesn't fit is a clean break point.
       flush();
       continue;
     }
     flush();
-    if (graphemeLength(token) <= limit) {
+    if (measure(token) <= limit) {
       current = token;
       continue;
     }
-    // Oversized single token: hard-split into limit-sized chunks.
-    const chars = graphemes(token);
-    for (let i = 0; i < chars.length; i += limit) {
-      const chunk = chars.slice(i, i + limit).join("");
-      if (graphemeLength(chunk) === limit) segments.push(chunk);
-      else current = chunk;
+    let chunk = "";
+    for (const ch of graphemes(token)) {
+      if (chunk !== "" && measure(chunk + ch) > limit) {
+        segments.push(chunk);
+        chunk = ch;
+      } else {
+        chunk += ch;
+      }
     }
+    current = chunk;
   }
   flush();
   return segments;
 }
 
+// Pack a body into <=limit segments, preferring paragraph boundaries: whole
+// paragraphs are kept together and packed greedily; a paragraph that alone
+// exceeds the limit falls back to word-splitting.
+function packParagraphs(body: string, limit: number, measure: Measure): string[] {
+  const segments: string[] = [];
+  let current = "";
+
+  for (const raw of body.split(/\n{2,}/)) {
+    const para = raw.trim();
+    if (para === "") continue;
+    if (measure(para) > limit) {
+      if (current !== "") {
+        segments.push(current);
+        current = "";
+      }
+      const parts = packWords(para, limit, measure);
+      current = parts.pop() ?? "";
+      for (const part of parts) segments.push(part);
+      continue;
+    }
+    if (current === "") {
+      current = para;
+    } else if (measure(current) + 2 + measure(para) <= limit) {
+      current = `${current}\n\n${para}`;
+    } else {
+      segments.push(current);
+      current = para;
+    }
+  }
+  if (current !== "") segments.push(current);
+  return segments;
+}
+
 /**
- * Split a note into Bluesky-sized segments for a thread. Short notes return a
- * single segment (no behavior change). The permalink (POSSE backlink) is
- * appended to the final segment, or posted as its own trailing segment when it
- * doesn't fit. Each segment is at most `limit` graphemes.
+ * Split a note into thread segments. Short notes return a single segment. The
+ * permalink (POSSE backlink) is appended to the final segment, or posted as its
+ * own trailing segment when it doesn't fit. Splitting prefers paragraph then
+ * word boundaries. With `weighted` (Twitter), URLs count as 23 graphemes.
  */
 export function splitIntoThread(
   noteText: string,
   permalink: string | null,
-  limit = BLUESKY_LIMIT,
-  suffixWeight?: number,
+  opts: { limit?: number; weighted?: boolean } = {},
 ): string[] {
+  const limit = opts.limit ?? BLUESKY_LIMIT;
+  const measure: Measure = opts.weighted ? twitterLength : graphemeLength;
   const body = noteText.trim();
   const suffix = permalink != null ? `\n\n${permalink}` : "";
-  // How many of the limit's graphemes the suffix consumes. Defaults to its
-  // literal length; callers can override (e.g. Twitter shortens any URL to 23).
-  const suffixCost = suffix === "" ? 0 : suffixWeight ?? graphemeLength(suffix);
+  const suffixCost = suffix === "" ? 0 : measure(suffix);
 
-  if (graphemeLength(body) + suffixCost <= limit) {
+  if (measure(body) + suffixCost <= limit) {
     return [body + suffix];
   }
 
-  const segments = packBody(body, limit);
+  const segments = packParagraphs(body, limit, measure);
   if (segments.length === 0) segments.push("");
 
   if (suffix !== "") {
     const lastIndex = segments.length - 1;
     const last = segments[lastIndex] ?? "";
-    if (graphemeLength(last) + suffixCost <= limit) {
+    if (measure(last) + suffixCost <= limit) {
       segments[lastIndex] = last + suffix;
     } else {
       segments.push(suffix.trimStart());

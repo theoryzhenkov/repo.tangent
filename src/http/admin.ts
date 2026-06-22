@@ -369,7 +369,7 @@ async function copyForX(note, btn) {
     data = await api("/api/thread-preview", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: note.text, limit: 280, permalink: permalink(note.id), permalinkWeight: 25 }),
+      body: JSON.stringify({ text: note.text, limit: 280, permalink: permalink(note.id), weighted: true }),
     });
   } catch { return; }
   const segs = (data.segments || []).filter((s) => s.length > 0);
