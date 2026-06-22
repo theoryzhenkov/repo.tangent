@@ -278,7 +278,9 @@ export function createApp({
   app.get("/admin", (c) => {
     if (config.adminPassword == null) return c.text("admin disabled", 404);
     if (!auth(c)) return c.redirect("/admin/login");
-    return c.html(adminPage(config.actorHandle, config.handleHost));
+    return c.html(
+      adminPage(config.actorHandle, config.handleHost, config.notePermalinkBase),
+    );
   });
 
   app.get("/admin/login", (c) =>

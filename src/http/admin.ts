@@ -15,6 +15,7 @@ function layout(title: string, body: string): string {
   header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
   header h1 { font-size: 16px; margin: 0; font-weight: 600; }
   header .hint { color: #8b93a7; font-size: 12px; }
+  header .hint button { padding: 2px 7px; font-size: 12px; }
   textarea, input[type=password] { width: 100%; background: #161922; color: #e6e6e6;
     border: 1px solid #2a2f3a; border-radius: 8px; padding: 10px; font: inherit; resize: vertical; }
   textarea:focus, input:focus, .note.sel { outline: none; border-color: #7aa2f7; }
@@ -39,6 +40,13 @@ function layout(title: string, body: string): string {
   .note .ops { margin-top: 6px; display: flex; gap: 8px; }
   .badge { color: #9ece6a; }
   .empty { color: #8b93a7; padding: 20px 0; }
+  .notice { color: #9ece6a; border: 1px solid #30452b; background: #121b12; border-radius: 8px; padding: 8px 10px; margin-top: 8px; }
+  .notice a { margin-right: 10px; }
+  .help { border: 1px solid #2a2f3a; border-radius: 10px; padding: 12px; margin: 12px 0; background: #11141d; }
+  .help h2 { margin: 0 0 8px; font-size: 14px; }
+  .help dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+  .help dt { color: #9ece6a; }
+  .help dd { margin: 0; color: #c7cad4; }
 </style>
 </head>
 <body><div class="wrap">${body}</div></body>
@@ -57,14 +65,33 @@ export function loginPage(error?: string): string {
   );
 }
 
-export function adminPage(handle: string, host: string): string {
+export function adminPage(
+  handle: string,
+  host: string,
+  notePermalinkBase: string | null,
+): string {
+  const publicNoteBase = notePermalinkBase ?? `https://${host}/notes`;
   const body = `<header>
     <h1>tangent · @${handle}@${host}</h1>
-    <span class="hint">n new · ⌘↵ post · e edit · d delete · j/k move · g refresh</span>
+    <span class="hint">n new · ⌘↵ post · e edit · d delete · j/k move · g refresh · <button id="help-toggle" type="button">?</button></span>
   </header>
-  <div class="composer">
+  <section id="help" class="help" hidden>
+    <h2>Shortcuts</h2>
+    <dl>
+      <dt>n</dt><dd>new note / focus composer</dd>
+      <dt>⌘↵ / Ctrl↵</dt><dd>post or save</dd>
+      <dt>j / k</dt><dd>select next / previous note</dd>
+      <dt>e</dt><dd>edit selected note</dd>
+      <dt>d</dt><dd>delete selected note</dd>
+      <dt>g</dt><dd>refresh notes</dd>
+      <dt>Esc</dt><dd>blur composer or close this help</dd>
+      <dt>paste/drop</dt><dd>attach images</dd>
+    </dl>
+  </section>
+  <div class="composer" data-public-note-base="${publicNoteBase.replace(/"/g, "&quot;")}">
     <textarea id="text" rows="4" placeholder="Write a note… #hashtags become tags"></textarea>
     <div class="thumbs" id="thumbs"></div>
+    <div id="notice" class="notice" hidden></div>
     <div class="row">
       <button id="attach" type="button">Attach image</button>
       <button id="post" class="primary" type="button">Post</button>
@@ -81,16 +108,58 @@ export function adminPage(handle: string, host: string): string {
 
 const ADMIN_SCRIPT = `<script type="module">
 const $ = (s) => document.querySelector(s);
-const textEl = $("#text"), thumbsEl = $("#thumbs"), listEl = $("#list"), countEl = $("#count");
-const postBtn = $("#post"), cancelBtn = $("#cancel"), fileEl = $("#file");
+const textEl = $("#text"), thumbsEl = $("#thumbs"), listEl = $("#list"), countEl = $("#count"), noticeEl = $("#notice");
+const postBtn = $("#post"), cancelBtn = $("#cancel"), fileEl = $("#file"), helpEl = $("#help"), helpToggle = $("#help-toggle");
+const publicNoteBase = document.querySelector(".composer").dataset.publicNoteBase.replace(/\\/$/, "");
+const DRAFT_KEY = "tangent:admin:draft:v1";
 let pending = [];      // { mediaId, url, alt }
 let editing = null;    // note id being edited
 let notes = [];
 let sel = -1;
 
-const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+const esc = (s) => s.replace(/[&<>\"]/g, (c) => {
+  if (c === "&") return "&amp;";
+  if (c === "<") return "&lt;";
+  if (c === ">") return "&gt;";
+  return "&quot;";
+});
 const updateCount = () => { countEl.textContent = [...textEl.value].length; };
-textEl.addEventListener("input", updateCount);
+function permalink(id) { return publicNoteBase + "/" + encodeURIComponent(id); }
+function blueskyWebUrl(uri) {
+  try {
+    const url = new URL(uri);
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (url.protocol === "at:" && parts[0] === "app.bsky.feed.post" && parts[1]) {
+      return "https://bsky.app/profile/" + encodeURIComponent(url.hostname) + "/post/" + encodeURIComponent(parts[1]);
+    }
+  } catch {}
+  return uri;
+}
+function showNotice(html) { noticeEl.innerHTML = html; noticeEl.hidden = false; }
+function hideNotice() { noticeEl.innerHTML = ""; noticeEl.hidden = true; }
+function saveDraft() {
+  const draft = { text: textEl.value, pending, editing, savedAt: new Date().toISOString() };
+  if (!draft.text.trim() && draft.pending.length === 0 && !draft.editing) localStorage.removeItem(DRAFT_KEY);
+  else localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+}
+function clearDraft() { localStorage.removeItem(DRAFT_KEY); }
+function restoreDraft() {
+  const raw = localStorage.getItem(DRAFT_KEY);
+  if (!raw) return;
+  try {
+    const draft = JSON.parse(raw);
+    if (typeof draft.text === "string") textEl.value = draft.text;
+    if (Array.isArray(draft.pending)) pending = draft.pending.filter((p) => p && typeof p.mediaId === "string" && typeof p.url === "string");
+    editing = typeof draft.editing === "string" ? draft.editing : null;
+    postBtn.textContent = editing ? "Save" : "Post";
+    cancelBtn.hidden = !editing;
+    renderThumbs(); updateCount();
+    if (textEl.value.trim() || pending.length > 0) showNotice('Draft restored from this browser. <button id="discard-draft" type="button">discard</button>');
+    document.querySelector("#discard-draft")?.addEventListener("click", resetComposer);
+  } catch { localStorage.removeItem(DRAFT_KEY); }
+}
+textEl.addEventListener("input", () => { updateCount(); saveDraft(); });
+helpToggle.addEventListener("click", () => { helpEl.hidden = !helpEl.hidden; });
 
 async function api(path, opts) {
   const res = await fetch(path, opts);
@@ -103,7 +172,7 @@ async function upload(file) {
   fd.append("file", file);
   const data = await api("/api/media", { method: "POST", body: fd });
   pending.push({ mediaId: data.id, url: data.url, alt: "" });
-  renderThumbs();
+  renderThumbs(); saveDraft();
 }
 
 function renderThumbs() {
@@ -114,8 +183,8 @@ function renderThumbs() {
     d.innerHTML = '<img src="' + p.url + '">' +
       '<input placeholder="alt text" value="' + esc(p.alt || "") + '">' +
       "<button>remove</button>";
-    d.querySelector("input").addEventListener("input", (e) => { p.alt = e.target.value; });
-    d.querySelector("button").addEventListener("click", () => { pending.splice(i, 1); renderThumbs(); });
+    d.querySelector("input").addEventListener("input", (e) => { p.alt = e.target.value; saveDraft(); });
+    d.querySelector("button").addEventListener("click", () => { pending.splice(i, 1); renderThumbs(); saveDraft(); });
     thumbsEl.appendChild(d);
   });
 }
@@ -132,12 +201,13 @@ function startEdit(note) {
   pending = note.attachments.map((a) => ({ mediaId: a.mediaId, url: a.url, alt: a.alt || "" }));
   postBtn.textContent = "Save";
   cancelBtn.hidden = false;
-  renderThumbs(); updateCount(); textEl.focus();
+  hideNotice();
+  renderThumbs(); updateCount(); saveDraft(); textEl.focus();
 }
 function resetComposer() {
   editing = null; pending = []; textEl.value = "";
   postBtn.textContent = "Post"; cancelBtn.hidden = true;
-  renderThumbs(); updateCount();
+  renderThumbs(); updateCount(); clearDraft(); hideNotice();
 }
 cancelBtn.addEventListener("click", resetComposer);
 
@@ -145,12 +215,23 @@ async function submit() {
   const text = textEl.value.trim();
   const attachments = pending.map((p) => ({ mediaId: p.mediaId, alt: p.alt }));
   if (!text && attachments.length === 0) return;
+  const wasEditing = Boolean(editing);
+  let result;
   if (editing) {
-    await api("/api/notes/" + editing, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, attachments }) });
+    result = await api("/api/notes/" + editing, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, attachments }) });
   } else {
-    await api("/api/compose", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, attachments }) });
+    result = await api("/api/compose", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, attachments }) });
   }
-  resetComposer(); await refresh();
+  const note = result?.note;
+  resetComposer();
+  if (note?.id) {
+    const links = ['<a href="' + permalink(note.id) + '" target="_blank" rel="noopener noreferrer">open permalink</a>'];
+    if (result?.syndicated?.bluesky) {
+      links.push('<a href="' + blueskyWebUrl(result.syndicated.bluesky) + '" target="_blank" rel="noopener noreferrer">open Bluesky</a>');
+    }
+    showNotice((wasEditing ? "Saved." : "Posted.") + " " + links.join(" "));
+  }
+  await refresh();
 }
 postBtn.addEventListener("click", submit);
 
@@ -192,8 +273,10 @@ async function refresh() {
 document.addEventListener("keydown", (e) => {
   const typing = ["TEXTAREA", "INPUT"].includes(document.activeElement.tagName);
   if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submit(); return; }
+  if (e.key === "Escape" && !helpEl.hidden) { e.preventDefault(); helpEl.hidden = true; return; }
   if (typing) { if (e.key === "Escape") document.activeElement.blur(); return; }
-  if (e.key === "n") { e.preventDefault(); resetComposer(); textEl.focus(); }
+  if (e.key === "?" || (e.key === "/" && e.shiftKey)) { e.preventDefault(); helpEl.hidden = !helpEl.hidden; }
+  else if (e.key === "n") { e.preventDefault(); resetComposer(); textEl.focus(); }
   else if (e.key === "g") { refresh(); }
   else if (e.key === "j") { sel = Math.min(sel + 1, notes.length - 1); render(); }
   else if (e.key === "k") { sel = Math.max(sel - 1, 0); render(); }
@@ -201,5 +284,6 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "d" && notes[sel]) { del(notes[sel].id); }
 });
 
+restoreDraft();
 refresh();
 </script>`;
