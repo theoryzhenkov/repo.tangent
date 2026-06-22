@@ -23,6 +23,7 @@ import { getSyndication, recordSyndication } from "../store/syndication.ts";
 import { adminPage, loginPage } from "./admin.ts";
 import { createNotesApi, serializeNote } from "./api.ts";
 import { checkPassword, isAuthed, SESSION_COOKIE, sessionToken } from "./auth.ts";
+import { publicNotePage } from "./public.ts";
 
 export interface AppDeps {
   database: Database;
@@ -113,6 +114,19 @@ export function createApp({
         "cache-control": "public, max-age=31536000, immutable",
       },
     });
+  });
+
+  // Public browser permalink used by POSSE links.
+  app.get("/notes/:id", async (c) => {
+    const note = await getNote(database, c.req.param("id"));
+    if (note == null) return c.text("not found", 404);
+    return c.html(
+      publicNotePage(
+        note,
+        config.notePermalinkBase ?? `${config.apOrigin}/notes`,
+        config.apOrigin,
+      ),
+    );
   });
 
   // Upload an image, returning its id + url for use as an attachment.
