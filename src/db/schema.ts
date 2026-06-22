@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -49,6 +50,10 @@ export const notes = pgTable(
     inReplyTo: text("in_reply_to"), // AP id of the object this replies to, if any
     visibility: text("visibility").notNull().default("public"),
     tags: jsonb("tags").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    attachments: jsonb("attachments")
+      .$type<Attachment[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     publishedAt: timestamp("published_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -56,6 +61,24 @@ export const notes = pgTable(
   },
   (t) => [uniqueIndex("notes_uri_idx").on(t.uri)],
 );
+
+/** A note attachment snapshot; the blob lives in the media store under mediaId. */
+export interface Attachment {
+  mediaId: string;
+  contentType: string;
+  alt: string | null;
+}
+
+/** Uploaded media blobs (images). The bytes live on disk under MEDIA_DIR/<id>. */
+export const media = pgTable("media", {
+  id: text("id").primaryKey(), // ULID
+  contentType: text("content_type").notNull(),
+  alt: text("alt"),
+  byteSize: integer("byte_size").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
 
 /** Cached remote actors we have seen (followers, repliers, likers). */
 export const actors = pgTable("actors", {

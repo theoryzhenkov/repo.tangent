@@ -6,6 +6,12 @@ export interface BlueskyPostResult {
   cid: string;
 }
 
+export interface BlueskyImage {
+  bytes: Uint8Array;
+  contentType: string;
+  alt: string | null;
+}
+
 const BLUESKY_LIMIT = 300; // graphemes
 
 /**
@@ -52,15 +58,42 @@ export class BlueskyClient {
     return this.#loginPromise;
   }
 
-  async post(text: string): Promise<BlueskyPostResult> {
+  async post(input: {
+    text: string;
+    images?: BlueskyImage[];
+  }): Promise<BlueskyPostResult> {
     await this.#ensureLogin();
-    const rich = new RichText({ text });
+    const rich = new RichText({ text: input.text });
     await rich.detectFacets(this.#agent);
-    const result = await this.#agent.post({
+
+    const record: Parameters<AtpAgent["post"]>[0] = {
       text: rich.text,
       facets: rich.facets,
       createdAt: new Date().toISOString(),
-    });
+    };
+
+    const images = (input.images ?? []).slice(0, 4); // Bluesky allows up to 4
+    if (images.length > 0) {
+      const uploaded = await Promise.all(
+        images.map(async (image) => {
+          const result = await this.#agent.uploadBlob(image.bytes, {
+            encoding: image.contentType,
+          });
+          return { image: result.data.blob, alt: image.alt ?? "" };
+        }),
+      );
+      record.embed = {
+        $type: "app.bsky.embed.images",
+        images: uploaded,
+      } as typeof record.embed;
+    }
+
+    const result = await this.#agent.post(record);
     return { uri: result.uri, cid: result.cid };
+  }
+
+  async deletePost(uri: string): Promise<void> {
+    await this.#ensureLogin();
+    await this.#agent.deletePost(uri);
   }
 }

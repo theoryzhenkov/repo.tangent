@@ -7,7 +7,8 @@ import {
 } from "../store/inbox.ts";
 import { getNote, listNotes, type NoteRow } from "../store/notes.ts";
 
-function serializeNote(row: NoteRow) {
+export function serializeNote(row: NoteRow) {
+  const origin = new URL(row.uri).origin;
   return {
     id: row.id,
     uri: row.uri,
@@ -16,6 +17,12 @@ function serializeNote(row: NoteRow) {
     text: row.text,
     inReplyTo: row.inReplyTo,
     tags: row.tags,
+    attachments: row.attachments.map((attachment) => ({
+      mediaId: attachment.mediaId,
+      url: `${origin}/media/${attachment.mediaId}`,
+      contentType: attachment.contentType,
+      alt: attachment.alt,
+    })),
     visibility: row.visibility,
     published: row.publishedAt.toISOString(),
     updated: row.updatedAt != null ? row.updatedAt.toISOString() : null,

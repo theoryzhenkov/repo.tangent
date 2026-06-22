@@ -1,7 +1,7 @@
 import { desc, eq, lt, sql } from "drizzle-orm";
 import { ulid } from "ulid";
 import type { Database } from "../db/client.ts";
-import { notes } from "../db/schema.ts";
+import { type Attachment, notes } from "../db/schema.ts";
 
 export type NoteRow = typeof notes.$inferSelect;
 
@@ -10,6 +10,7 @@ export interface CreateNoteInput {
   html: string;
   inReplyTo?: string | null;
   tags?: string[];
+  attachments?: Attachment[];
   visibility?: string;
 }
 
@@ -48,10 +49,42 @@ export async function createNote(
       html: input.html,
       inReplyTo: input.inReplyTo ?? null,
       tags: input.tags ?? [],
+      attachments: input.attachments ?? [],
       visibility: input.visibility ?? "public",
     })
     .returning();
   if (row == null) throw new Error("Failed to insert note");
+  return row;
+}
+
+export interface UpdateNoteInput {
+  text: string;
+  html: string;
+  tags: string[];
+  attachments: Attachment[];
+}
+
+export async function updateNote(
+  database: Database,
+  id: string,
+  patch: UpdateNoteInput,
+): Promise<NoteRow | undefined> {
+  const [row] = await database.db
+    .update(notes)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(eq(notes.id, id))
+    .returning();
+  return row;
+}
+
+export async function deleteNote(
+  database: Database,
+  id: string,
+): Promise<NoteRow | undefined> {
+  const [row] = await database.db
+    .delete(notes)
+    .where(eq(notes.id, id))
+    .returning();
   return row;
 }
 

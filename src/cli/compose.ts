@@ -115,8 +115,8 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const data = (await response.json()) as { uri: string };
-  console.log(`\nPosted: ${data.uri}`);
+  const data = (await response.json()) as { note: { uri: string } };
+  console.log(`\nPosted: ${data.note.uri}`);
 }
 
 await main();

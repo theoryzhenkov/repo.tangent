@@ -37,7 +37,7 @@ bun run dev            # http://localhost:8787  (/healthz, /readyz)
 - **M1** — actor + WebFinger (resolvable from Mastodon).
 - **M2** — outbox + `/api/notes` read API; Home reads from here.
 - **M3** — inbox: follows.
-- **M4** — compose + deliver `Create(Note)` to followers.
+- **M4** — compose/edit/delete + media attachments, deliver Create/Update/Delete, keyboard-driven web admin at `/admin`.
 - **M5** — replies / likes / boosts / deletes + thread API.
 - **M6** — Bluesky POSSE.
 - **M7** — deploy (ops_atlas) + migrate off Ghost ActivityPub.

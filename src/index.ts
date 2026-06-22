@@ -1,11 +1,12 @@
 import { behindProxy } from "x-forwarded-fetch";
 import { BlueskyClient } from "./bluesky/client.ts";
 import { loadConfig } from "./config.ts";
-import { setupLogging } from "./logging.ts";
 import { createDatabase } from "./db/client.ts";
 import { ensureActorKeys } from "./federation/keys.ts";
 import { createTangentFederation } from "./federation/mod.ts";
 import { createApp } from "./http/app.ts";
+import { setupLogging } from "./logging.ts";
+import { createMediaStore } from "./store/media.ts";
 
 await setupLogging();
 
@@ -25,7 +26,8 @@ await queue.initialize();
 await ensureActorKeys(database);
 
 const bluesky = config.bluesky != null ? new BlueskyClient(config.bluesky) : null;
-const app = createApp({ database, federation, config, bluesky });
+const mediaStore = createMediaStore(database, config.mediaDir);
+const app = createApp({ database, federation, config, bluesky, mediaStore });
 
 console.log(`tangent listening on :${config.port}`);
 

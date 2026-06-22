@@ -29,6 +29,10 @@ export interface Config {
   bluesky: BlueskyCredentials | null;
   /** Base URL for public note permalinks linked from syndicated posts. */
   notePermalinkBase: string | null;
+  /** Directory where uploaded media blobs are stored. */
+  mediaDir: string;
+  /** Password for the web admin UI; admin is disabled if null. */
+  adminPassword: string | null;
 }
 
 export function loadConfig(): Config {
@@ -50,5 +54,7 @@ export function loadConfig(): Config {
           }
         : null,
     notePermalinkBase: process.env.NOTE_PERMALINK_BASE?.trim() || null,
+    mediaDir: optional("MEDIA_DIR", "./media"),
+    adminPassword: process.env.ADMIN_PASSWORD?.trim() || null,
   };
 }

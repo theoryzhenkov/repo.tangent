@@ -30,6 +30,14 @@ CREATE TABLE "keys" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "media" (
+	"id" text PRIMARY KEY NOT NULL,
+	"content_type" text NOT NULL,
+	"alt" text,
+	"byte_size" integer NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "notes" (
 	"id" text PRIMARY KEY NOT NULL,
 	"uri" text NOT NULL,
@@ -38,6 +46,7 @@ CREATE TABLE "notes" (
 	"in_reply_to" text,
 	"visibility" text DEFAULT 'public' NOT NULL,
 	"tags" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"attachments" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"published_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone
 );
