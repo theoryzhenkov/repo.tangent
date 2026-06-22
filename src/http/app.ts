@@ -216,7 +216,10 @@ export function createApp({
     return c.json({ note: serializeNote(note), syndicated });
   });
 
-  // Edit a note: deliver Update(Note) and edit the Bluesky copy in place.
+  // Edit a note: update the record and deliver Update(Note). The Bluesky copy
+  // is intentionally left unchanged — Bluesky's AppView does not surface edits
+  // to a post record, so an in-place edit would never be visible. Use the
+  // explicit repost action (/resyndicate) to publish a fresh Bluesky post.
   app.patch("/api/notes/:id", async (c) => {
     if (!auth(c)) return c.json({ error: "unauthorized" }, 401);
     const id = c.req.param("id");
@@ -245,35 +248,52 @@ export function createApp({
       toUpdateActivity(ctx, config.actorHandle, note),
     );
 
-    // Edit the syndicated Bluesky copy in place, if one exists. Only notes
-    // that were POSSE'd (top-level, posted while Bluesky was reachable) have a
-    // syndication row; replies and un-syndicated notes are left alone.
-    let syndicated: { bluesky: string } | null = null;
-    if (bluesky != null) {
-      const synd = await getSyndication(database, id, "bluesky");
-      if (synd != null) {
-        try {
-          const result = await bluesky.updatePost(synd.remoteUri, {
-            text: buildBlueskyText(note.text, notePermalink(note.id)),
-            images: await blueskyImages(attachments),
-          });
-          await updateSyndication(
-            database,
-            note.id,
-            "bluesky",
-            result.uri,
-            result.cid,
-          );
-          syndicated = { bluesky: result.uri };
-        } catch (error) {
-          console.error("tangent: bluesky update failed", error);
-        }
-      }
-    }
-
     await pruneRemovedMedia(existing.attachments, attachments);
 
-    return c.json({ note: serializeNote(note), syndicated });
+    return c.json({ note: serializeNote(note) });
+  });
+
+  // Re-syndicate a note to Bluesky: publish a fresh post and delete the old
+  // Bluesky copy (if any). This is the explicit alternative to editing, which
+  // Bluesky's AppView does not surface. Top-level notes only; the new post
+  // gets a new URI and does not carry over the old post's likes/reposts.
+  app.post("/api/notes/:id/resyndicate", async (c) => {
+    if (!auth(c)) return c.json({ error: "unauthorized" }, 401);
+    if (bluesky == null) return c.json({ error: "bluesky not configured" }, 409);
+    const id = c.req.param("id");
+    const note = await getNote(database, id);
+    if (note == null) return c.json({ error: "not found" }, 404);
+    if (note.inReplyTo != null) {
+      return c.json({ error: "replies are not syndicated" }, 400);
+    }
+
+    const existing = await getSyndication(database, id, "bluesky");
+
+    let result;
+    try {
+      result = await bluesky.post({
+        text: buildBlueskyText(note.text, notePermalink(note.id)),
+        images: await blueskyImages(note.attachments),
+      });
+    } catch (error) {
+      console.error("tangent: bluesky repost failed", error);
+      return c.json({ error: "bluesky repost failed" }, 502);
+    }
+
+    // Point the syndication row at the new post first, so the DB never
+    // references a deleted post even if the delete below fails.
+    if (existing != null) {
+      await updateSyndication(database, id, "bluesky", result.uri, result.cid);
+      try {
+        await bluesky.deletePost(existing.remoteUri);
+      } catch (error) {
+        console.error("tangent: bluesky delete (old copy) failed", error);
+      }
+    } else {
+      await recordSyndication(database, id, "bluesky", result.uri, result.cid);
+    }
+
+    return c.json({ syndicated: { bluesky: result.uri } });
   });
 
   // Delete a note: tombstone to followers, remove the Bluesky copy + blobs.

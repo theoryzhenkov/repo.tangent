@@ -241,6 +241,15 @@ async function del(id) {
   await refresh();
 }
 
+async function repost(id) {
+  if (!confirm("Publish a new Bluesky post for this note and delete the old one? The new post gets a new URL and does not keep the old post's likes, reposts, or replies.")) return;
+  const result = await api("/api/notes/" + id + "/resyndicate", { method: "POST" });
+  if (result?.syndicated?.bluesky) {
+    showNotice('Reposted to Bluesky. <a href="' + blueskyWebUrl(result.syndicated.bluesky) + '" target="_blank" rel="noopener noreferrer">open Bluesky</a>');
+  }
+  await refresh();
+}
+
 function render() {
   if (notes.length === 0) { listEl.innerHTML = '<div class="empty">No notes yet.</div>'; return; }
   listEl.innerHTML = "";
@@ -255,8 +264,11 @@ function render() {
       (n.tags.length ? "<span>" + n.tags.map((t) => "#" + esc(t)).join(" ") + "</span>" : "") + "</div>" +
       '<div class="body">' + n.html + "</div>" +
       (atts ? '<div class="atts">' + atts + "</div>" : "") +
-      '<div class="ops"><button data-op="edit">edit</button><button data-op="del">delete</button></div>';
+      '<div class="ops"><button data-op="edit">edit</button>' +
+      (n.inReplyTo ? "" : '<button data-op="repost">repost to Bluesky</button>') +
+      '<button data-op="del">delete</button></div>';
     el.querySelector('[data-op="edit"]').addEventListener("click", () => startEdit(n));
+    el.querySelector('[data-op="repost"]')?.addEventListener("click", () => repost(n.id));
     el.querySelector('[data-op="del"]').addEventListener("click", () => del(n.id));
     el.addEventListener("click", () => { sel = i; render(); });
     listEl.appendChild(el);
