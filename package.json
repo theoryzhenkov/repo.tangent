@@ -10,7 +10,8 @@
     "compose": "bun src/cli/compose.ts",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "db:migrate:run": "bun src/migrate.ts"
   },
   "dependencies": {
     "@atproto/api": "^0.20.15",
