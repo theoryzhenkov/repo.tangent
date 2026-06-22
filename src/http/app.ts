@@ -1,21 +1,24 @@
 import type { Federation } from "@fedify/fedify";
 import { federation as fedifyMiddleware } from "@fedify/hono";
 import { Hono } from "hono";
+import { type BlueskyClient, buildBlueskyText } from "../bluesky/client.ts";
 import type { Config } from "../config.ts";
 import type { Database } from "../db/client.ts";
 import type { FedContextData } from "../federation/mod.ts";
 import { toCreateActivity } from "../federation/objects.ts";
 import { renderNote } from "../notes/render.ts";
 import { createNote } from "../store/notes.ts";
+import { recordSyndication } from "../store/syndication.ts";
 import { createNotesApi } from "./api.ts";
 
 export interface AppDeps {
   database: Database;
   federation: Federation<FedContextData>;
   config: Config;
+  bluesky: BlueskyClient | null;
 }
 
-export function createApp({ database, federation, config }: AppDeps): Hono {
+export function createApp({ database, federation, config, bluesky }: AppDeps): Hono {
   const app = new Hono();
 
   // Fedify intercepts ActivityPub/WebFinger requests via content negotiation
@@ -63,7 +66,23 @@ export function createApp({ database, federation, config }: AppDeps): Hono {
       toCreateActivity(ctx, config.actorHandle, note),
     );
 
-    return c.json({ id: note.id, uri: note.uri, tags });
+    // Best-effort POSSE to Bluesky for top-level notes; failures don't fail compose.
+    let syndicated: { bluesky: string } | null = null;
+    if (bluesky != null && note.inReplyTo == null) {
+      try {
+        const permalink =
+          config.notePermalinkBase != null
+            ? `${config.notePermalinkBase.replace(/\/$/, "")}/${note.id}`
+            : null;
+        const result = await bluesky.post(buildBlueskyText(note.text, permalink));
+        await recordSyndication(database, note.id, "bluesky", result.uri, result.cid);
+        syndicated = { bluesky: result.uri };
+      } catch (error) {
+        console.error("tangent: bluesky syndication failed", error);
+      }
+    }
+
+    return c.json({ id: note.id, uri: note.uri, tags, syndicated });
   });
 
   // Liveness: process is up. Must not depend on external services.

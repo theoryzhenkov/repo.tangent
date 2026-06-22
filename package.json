@@ -13,6 +13,7 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
+    "@atproto/api": "^0.20.15",
     "@fedify/fedify": "^2.2.5",
     "@fedify/hono": "^2.2.5",
     "@fedify/postgres": "^2.2.5",
